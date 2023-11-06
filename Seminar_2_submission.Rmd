@@ -1,0 +1,221 @@
+---
+title: "Seminar 2- Jakub Fridrich"
+output: html_document
+date: "2023-11-01"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+# My Seminar Submission
+
+Complete the following:
+
+
+> 1.  Write your name and surname in bold font, with your Name ONLY in
+>     italics.
+
+**Answer**
+
+**_Jakub_ Fridrich**
+
+> 2.  Print your student number and what year you are in on different
+>     lines.
+
+**Answer**
+
+```{r}
+print(2001497)
+print('Year 4')
+```
+
+
+
+> 3.  Briefly state, in italics, why you are doing this Data Science
+>     Module
+
+**Answer**
+
+*I am doing this module to strengthen my application to a Data Science masters*
+
+> 4.  Make an unordered list of at least 3 things you have learned in
+>     this module.
+
+**Answer**
+
+<!-- Not sure if you wanted code or not so here are both my answers: -->
+
+- The CRISP-DM methodology
+
+- That R has variable types like factor which are not present in Python
+
+- The importance of data pre-processing
+
+> 5.  Create a table showing the 1st 5 stages of the John Rollins
+>     General Data Science Methodology and the quetions associate with
+>     them.
+
+**Answer**
+
+```{r}
+my_table <- data.frame(
+  stage_1 = c("Business/Problem Understanding", "What problem are you trying to solve?"), 
+  stage_2 = c("Analytic Apprach", "How can you use the data to answer this question?"), 
+  stage_3 = c("Data requirements", "What data is needed to answer the question?"), 
+  stage_4 = c("Data collection", "What is the source of this data? How to collect?"), 
+  stage_5 = c("Data Understanding", "Is the data indicative of the problem to be solved?")
+)
+
+library(knitr)
+kable(my_table)
+```
+
+
+
+> 6.  Create an ordered list of at least 3 other Data Science
+>     methodologies.
+
+**Answer**
+
+1. Crisp-DM
+2. TDSP
+3. OSEMN
+
+> 7.  Provide and ordered list the weaknesses of the CRISP-DM
+>     methodology and how to address them
+
+**Answer**
+
+
+#### Weaknesses
+
+1. Outdated
+2. Documnetation heavy
+3. Not a project managment approach
+4. Can ignore stake holders
+5. Slow start
+
+#### Combatting these
+
+1. Defining team roles
+2. Combining with a team coordiantion process
+3. Document enough, but not too much
+4. Iterate quickly
+5. Ensrure actionable insight
+6. Add phases (if needed)
+
+getwd()
+
+> 8.  Download and include a University of Warwick Logo in your
+>     document.
+
+**Answer**
+
+[![University of Warwick logo](Users/jakubfridrich/Down loads/Unknown)](https://www.google.com/url?sa=i&url=https%3A%2F%2Fcommons.wikimedia.org%2Fwiki%2FFile%3AWarwick_Logo.png&psig=AOvVaw0LBQgnc0_ozW7JrOXaKgaQ&ust=1699007108330000&source=images&cd=vfe&opi=89978449&ved=0CBIQjRxqFwoTCPCKxOuMpYIDFQAAAAAdAAAAABAD)
+
+> 9.  Write and execute a code to randomly generate 10 numbers from a
+>     normal distribution with mean 12 and standard deviation 3.
+
+**Answer**
+
+```{r}
+set.seed(123)
+random_numbers <- rnorm(10, mean = 12, sd = 3)
+print(random_numbers)
+```
+
+
+> 10. Write and execute a code to calculate the mean of 12 random
+>     numbers generated from the intervalof integes from 5 to 25.
+
+**Answer**
+
+
+```{r}
+set.seed(123)
+random_numbers_2 <- sample(5:25, 12, replace = TRUE)
+mean_value <- mean(random_numbers_2)
+print(mean_value)
+```
+
+> 11. Write and execute a code to create a scatter plot containing 12
+>     points whose coordinates were randomly geenrated in the interval 5
+>     to 25. Provide a title for the figure, label the x and y axis.
+
+**Answer**
+
+```{r}
+set.seed(123)
+random_x_values = sample(5:25, 12, replace = TRUE)
+random_y_values = sample(5:25, 12, replace = TRUE)
+data <- data.frame(x = random_x_values, y = random_y_values)
+
+library(ggplot2)
+scatter_plot <- ggplot(data, aes(x, y)) +
+  geom_point() +
+  labs(title = "Scatter Plot with Random Coordinates",
+       x = "X-Axis",
+       y = "Y-Axis")
+
+print(scatter_plot)
+```
+
+
+> 12. Write and execute a code to create a function to calculate
+>     standard error. Then, calculate the standard error of a set of 15
+>     randomly generated numbers from a normal distribution with mean 12
+>     and standard deviation 3.
+
+**Answer**
+
+```{r}
+standard_error <- function(data) 
+  {se <- sd(data)/sqrt(length(data))
+return(se)}
+
+set.seed(123)
+random_numbers_3 <- rnorm(15, mean = 12, sd = 3)
+print(standard_error(random_numbers_3))
+```
+
+
+> 13. Given that BMI=kg/m2, where kg is the person’s weight in kilograms
+>     and m2is height in meters squared, write and execute a code to
+>     create a function that calculates the BMI of who weighs 85kg and
+>     is 1.9m tall.
+
+**Answer**
+
+```{r}
+bmi <- function(weight_kg, height_m) 
+{bmi_inner <- weight_kg/height_m**2
+  return(bmi_inner)}
+
+print(bmi(85,1.9))
+
+```
+
+
+
+
