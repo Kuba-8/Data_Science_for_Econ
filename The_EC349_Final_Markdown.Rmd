@@ -1,0 +1,719 @@
+---
+title: "The_EC349_Final_Markdown"
+output:
+  html_document: default
+  pdf_document: default
+date: "2023-12-04"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Link to Github: https://github.com/Kuba-8/Data_Science_for_Econ
+
+```{r, include=FALSE}
+
+setwd("/Users/jakubfridrich/Desktop/EC349 Assignment")
+getwd()
+
+
+library(tidyverse)
+library(tibble)
+library(jsonlite)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(glmnet)
+library(lubridate)
+library(text)
+library(SentimentAnalysis)
+library(tidytext)
+library(ggcorrplot)
+library(hexbin)
+
+
+```
+
+# Introduction 
+
+In this project I will attempt to predict the number of stars a given user rates a certain business on the review platform Yelp (“stars.x”), using a supervised machine learning model. The documentation for the variables in the dataset can be found on the Yelp website [1]. Within my data, a .x suffix for a variable corresponds to review data, and a .y corresponds to user data. 
+
+# Methodology Selection
+
+The Data Science methodology I chose to apply during this project was the John Rallins’ Data Science Methodology. Given the nature of the task, both Phase 1 (the problem understanding) and Phase 2 (the data requirements and collection) were partially fixed from the outset. However, there was scope to vary the broad analytic approach and data preparation elements, both influenced by a growing data understanding of the project. I found myself periodically returning to the data preparation stage, editing the methods I had used to subdivide the data, given revised assumptions about the data and modelling process. For example, editing the variable selection after realising that some of the variables I had selected as possible features had too many missing values for meaningful imputation. Phase 3 of the methodology was deployed by evaluating various visualisations of the data to determine the best model given its characteristics. This was performed iteratively, where one model was substituted for another upon evaluation of its predictive performance in terms of means squared error (MSE).
+
+# Dataset Selection and Merging
+
+```{r, include=FALSE}
+
+yelp_review_data <- load("/Users/jakubfridrich/Desktop/EC349 Assignment/yelp_review_small.Rda")
+yelp_user_data <- load("/Users/jakubfridrich/Desktop/EC349 Assignment/yelp_user_small.Rda")
+
+yelp_business_data <- stream_in(file("/Users/jakubfridrich/Desktop/EC349 Assignment/yelp_academic_dataset_business.json"))
+yelp_checkin_data  <- stream_in(file("/Users/jakubfridrich/Desktop/EC349 Assignment/yelp_academic_dataset_checkin.json")) 
+yelp_tip_data  <- stream_in(file("/Users/jakubfridrich/Desktop/EC349 Assignment/yelp_academic_dataset_tip.json")) 
+
+```
+
+```{r, include=FALSE}
+
+print(yelp_review_data)
+print(yelp_user_data)
+
+class(review_data_small)
+class(user_data_small)
+
+review_data_small_tibble <- as_tibble(review_data_small)
+user_data_small_tibble <- as_tibble(user_data_small)
+
+colnames(user_data_small_tibble)
+colnames(review_data_small_tibble)
+
+head(yelp_business_data)
+head(yelp_checkin_data)
+head(yelp_tip_data)
+
+business_data_tibble <- as_tibble(yelp_business_data)
+checkin_data_tibble <- as_tibble(yelp_checkin_data)
+tip_data_tibble <- as_tibble(yelp_tip_data)
+
+colnames(business_data_tibble)
+colnames(checkin_data_tibble)
+colnames(tip_data_tibble)
+
+glimpse(user_data_small_tibble)
+glimpse(review_data_small_tibble)
+glimpse(business_data_tibble)
+glimpse(checkin_data_tibble)
+glimpse(tip_data_tibble)
+```
+
+I began my project by choosing to anaylse each of the datasets available to me, to survey all the possible information at my disposal. The choice to convert each dataframe into the tibble format was made for increased compatibility with packages like ggplot2 and dplyr. Looking at the contents of each dataframe, I quickly decided that the three of the datasets (the user, business, and review data) had more intuitive relevance to the question at hand, though the other two may also contain some useful information and should therefore not be discounted.
+
+A full-join combination was used to merge the three major datasets, in an effort to retain all the information contained within each one. However, datasets of varying size led to the presence of observations which did not align and therefore lacked vital information, such as the text of the review. These were consequently dropped from the resultant tibble. 
+
+Upon inspection of the data’s documentation [1], the decision to omit much of the tips-data and check-in data was made. The tip data refers to a shorter review type, that is not rated by stars and therefore these reviews are not directly relevant to those at hand. Though, the number of tip reviews that a business has, and number of check-ins (yelp user walk-ins) were added as proxies for business popularity with the help of a left-join, to avoid inundating the existing data with irrelevant information.
+
+
+```{r, include=FALSE}
+
+# Merging User and Review Data
+
+merged_review_and_user_tibble <- full_join(review_data_small_tibble, user_data_small_tibble, by ="user_id")
+
+head(merged_review_and_user_tibble)
+
+# Filtering out reviews without information on their associated users 
+
+missings_in_columns <- colSums(is.na(merged_review_and_user_tibble))
+print(missings_in_columns)
+
+filtered_review_and_user_tibble <- merged_review_and_user_tibble %>%
+  filter(!is.na(name))
+
+head(filtered_review_and_user_tibble)
+print(filtered_review_and_user_tibble)
+
+# Merging with business data
+
+merged_business_review_and_user_tibble <- full_join(filtered_review_and_user_tibble, business_data_tibble, by ="business_id")
+
+head(merged_business_review_and_user_tibble)
+print(merged_business_review_and_user_tibble)
+
+# Preparing and merging the relevant tips data
+
+unique_tip_counts <- tip_data_tibble %>%
+  count(business_id, name = "tip_count") %>%
+  distinct()
+  
+print(unique_tip_counts)
+summary(unique_tip_counts)
+
+merged_tip_business_review_and_user_tibble <- left_join(merged_business_review_and_user_tibble, unique_tip_counts, by = "business_id")
+
+print(merged_tip_business_review_and_user_tibble)
+
+# Preparing and merging the relevant checkin data to get the fully merged tibble
+
+checkin_data_tibble <- checkin_data_tibble %>%
+  mutate(checkin_timestamp_count = str_count(date, ",") + 1)
+
+print(checkin_data_tibble)
+
+num_checkin_per_business <- checkin_data_tibble %>%
+  select(-date)
+
+print(num_checkin_per_business)
+summary(num_checkin_per_business)
+
+final_tibble <- left_join(merged_tip_business_review_and_user_tibble, num_checkin_per_business, by = "business_id")
+
+print(final_tibble)
+glimpse(final_tibble)
+
+```
+
+
+# Data Preparation
+
+```{r, include=FALSE}
+
+missings_in_columns <- colSums(is.na(final_tibble))
+print(missings_in_columns)
+
+# Removing the missing values for the 'text' variable that contains the main body of the reviews
+
+final_tibble_2 <- final_tibble %>%
+  filter(!is.na(text))
+
+head(final_tibble_2)
+glimpse(final_tibble_2)
+
+missings_in_columns <- colSums(is.na(final_tibble_2))
+print(missings_in_columns)
+
+glimpse(final_tibble_2$attributes)
+
+missings_in_columns <- colSums(is.na(final_tibble_2$attributes))
+print(missings_in_columns)
+
+# Investigating the attributes dataframe: RestaurantsPriceRange2
+
+unique_values <- final_tibble_2$attributes %>%
+  distinct(RestaurantsPriceRange2)
+  
+print(unique_values)
+
+final_tibble_2$attributes <- final_tibble_2$attributes %>%
+  mutate(RestaurantsPriceRange2 = factor(RestaurantsPriceRange2, levels = c("1", "2", "3", "4")))
+
+glimpse(final_tibble_2$attributes$RestaurantsPriceRange2)
+summary(final_tibble_2$attributes$RestaurantsPriceRange2)
+
+# Graphical Analysis 
+
+ggplot(final_tibble_2, aes(x = attributes$RestaurantsPriceRange2, y = stars.x)) +
+  geom_boxplot(fill = "lightblue", color = "blue", alpha = 0.7) +
+  labs(title = "Boxplot for the Variation in Stars per review with RestaurantsPriceRange2",
+       x = "RestaurantsPriceRange2",
+       y = "Stars") +
+  theme_minimal()
+```
+
+After dropping the observations with missing values generated in the data merging process, I then turned my attention to exploring the data, adjusting the relevant variable types, and using statistical and graphical tests to determine whether I should drop or keep variables. The figures below serve as examples of this, in which my visulisations were made using the ggplot2 package [2], [3]:
+
+```{r}
+
+
+# Graphical analysis
+  
+ggplot(final_tibble_2, aes(x = attributes$RestaurantsPriceRange2, y = stars.x, fill = attributes$RestaurantsPriceRange2)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  labs(title = "Violoinplot for the Variation in Stars per review with RestaurantsPriceRange2",
+       x = "RestaurantsPriceRange2",
+       y = "Stars") +
+  theme_minimal()
+
+# Clear distributional differences are present
+
+# Mathemtically
+
+model_ranges <- lm(stars.x ~ attributes$RestaurantsPriceRange2, data = final_tibble_2)
+
+summary(model_ranges)
+
+# Small, though statistically signficant relationship for all coefficients
+
+# Distribution of stars.x with and without missing values being deleted
+
+
+final_tibble_3 <- final_tibble_2 %>%
+  filter(!is.na(attributes$RestaurantsPriceRange2))
+
+missings_in_columns <- colSums(is.na(final_tibble_3))
+print(missings_in_columns)
+
+# Underlying distribution remains unchanged:
+
+histogram1 <- ggplot(final_tibble_2, aes(x = stars.x)) +
+  geom_histogram(binwidth = 1, fill = "blue", alpha = 0.7) +
+  labs(title = "Histogram for Stars per review in final_tibble_2")
+
+histogram2 <- ggplot(final_tibble_3, aes(x = stars.x)) +
+  geom_histogram(binwidth = 1, fill = "red", alpha = 0.7) +
+  labs(title = "Histogram for Stars per review in final_tibble_3")
+
+print(histogram1)
+
+print(histogram2)
+
+# Difference in means test for stars.x over the two samples
+
+t_test_result <- t.test(final_tibble_2$stars.x, final_tibble_3$stars.x)
+
+print(t_test_result)
+
+# sample mean difference is siginficant, though very small at just around 0.02 of a star
+
+
+```
+
+
+```{r, include=FALSE}
+
+
+# Now, taking a similar look at another potentially suitable variable: BusinessAcceptsCreditCards
+
+final_tibble_3$attributes <- final_tibble_3$attributes %>%
+  mutate(BusinessAcceptsCreditCards = as.logical(BusinessAcceptsCreditCards))
+
+glimpse(final_tibble_3$attributes$BusinessAcceptsCreditCards)
+summary(final_tibble_3$attributes$BusinessAcceptsCreditCards)
+
+# low number of missing values, however very little variation
+
+final_tibble_3$attributes <- final_tibble_3$attributes %>%
+  select(-BusinessAcceptsCreditCards)
+
+# Looking further at categories:
+
+final_tibble_and_categories <- final_tibble_3 %>%
+  separate_rows(categories, sep = ", ") %>%
+  mutate(categories = trimws(categories)) %>%
+  filter(categories != "") %>%
+  count(categories) %>%
+  arrange(desc(n))
+
+```
+
+
+```{r}
+
+
+cat("Number of unique categories: ", nrow(final_tibble_and_categories), "\n")
+head(final_tibble_and_categories)
+
+# 992 categories is simply too many categories to include in the dataset
+
+ggplot(head(final_tibble_and_categories, 20), aes(x = reorder(categories, -n), y = n)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "darkblue") +
+  coord_flip() +
+  labs(title = "Top 20 Most Popular Categories", x = "Categories", y = "Count")
+
+# Approximately 80% of the businesses are categorised as restaurants, with 13 of the top 20 categories being food related. Therefore, they are all broadly the same categroy of business.
+
+```
+
+Though not every variable necessitated such granular analysis; the majority in the ‘hours’ and ‘attributes’ sub-dataframes contained too many missing values to analyse (most >50%), whilst being factor variables and therefore also unsuitable for mean imputation. Hence, I made the decision to drop most of them, to preserve the size of my training data.
+
+To utilise the main body of the review in my model, I used the SentimentAnalysis package to quantitatively analyse the “text” variable and hence the view each of the reviews represented [4], obtaining a numerical score for each by using the bing index- “sentiment_score”. 
+
+```{r, include=FALSE}
+
+
+# Consequently, the variable is dropped
+
+final_tibble_3 <- final_tibble_3 %>%
+  select(-categories)
+
+glimpse(final_tibble_3)
+
+# Looking at another business attribute: WiFi
+
+unique_values <- final_tibble_3$attributes %>%
+  distinct(WiFi) %>%
+  count(WiFi) %>%
+  arrange(desc(n))
+  
+print(unique_values)
+
+final_tibble_3$attributes <- final_tibble_3$attributes %>%
+  mutate(WiFi = factor(WiFi, levels = c("'free'", "'no'", "'paid'", "None", "u'free'", "u'no'", "u'paid'")))
+
+glimpse(final_tibble_3$attributes$WiFi)
+summary(final_tibble_3$attributes$WiFi)
+
+# Graphs to find out whether WiFi is an important variable
+
+ggplot(final_tibble_3, aes(x = attributes$WiFi, y = stars.x)) +
+  geom_boxplot(fill = "lightblue", color = "blue", alpha = 0.7) +
+  labs(title = "Boxplot for the variation in Stars per review with WiFi",
+       x = "WiFi",
+       y = "Stars") +
+  theme_minimal()
+
+ggplot(final_tibble_3, aes(x = attributes$WiFi, y = stars.x, fill = attributes$WiFi)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  labs(title = "Violin plot for the variation in Stars per review with WiFi",
+       x = "WiFi",
+       y = "Stars") +
+  theme_minimal()
+
+# Clearly no difference in distribution, when taking into account the sample of each column
+
+
+# Imputing missed values in the two variables constructed from the checkin and tips data with 0's
+# as a missing value just means the business_id was not present in the other two datasets
+
+final_tibble_4 <- final_tibble_3 %>%
+  mutate(
+    tip_count = if_else(is.na(tip_count), 0, tip_count),
+    checkin_timestamp_count = if_else(is.na(checkin_timestamp_count), 0, checkin_timestamp_count)
+  )
+
+missings_in_columns <- colSums(is.na(final_tibble_4))
+print(missings_in_columns)
+
+# Code for dropping the variables that I do not want to use, largely due to a lack of data
+
+final_tibble_4$attributes <- final_tibble_4$attributes %>% 
+  select(-ByAppointmentOnly, -CoatCheck, -WheelchairAccessible, -HappyHour, -RestaurantsTakeOut, -RestaurantsDelivery, -Caters, -OutdoorSeating, -HasTV, -RestaurantsReservations, -DogsAllowed, -Alcohol, -GoodForKids, -RestaurantsAttire, -Ambience,
+  -RestaurantsTableService, -RestaurantsGoodForGroups, -DriveThru, -NoiseLevel,
+  -GoodForMeal, -BusinessAcceptsBitcoin, -Smoking, -Music, -GoodForDancing, -AcceptsInsurance, -BestNights, -BYOB, -Corkage, -BYOBCorkage, -HairSpecializesIn, -Open24Hours, -RestaurantsCounterService, -AgesAllowed, -DietaryRestrictions, -BikeParking, -BusinessParking, -WiFi)
+
+missings_in_columns <- colSums(is.na(final_tibble_4))
+print(missings_in_columns)
+
+# The hours sub-dataframe has relatively few missing values, so could be altered using mean imputation
+# However, it does not seem relevant enough to individual reviews.
+
+final_tibble_4$hours <- final_tibble_4$hours %>% 
+  select(-Monday, -Tuesday, -Wednesday, -Thursday, -Friday, -Saturday, -Sunday)
+
+missings_in_columns <- colSums(is.na(final_tibble_4))
+print(missings_in_columns)
+
+# Adjusting variable types
+
+# date (currently character)
+
+final_tibble_5 <- final_tibble_4 %>%
+  mutate(date = ymd_hms(date))
+  
+glimpse(final_tibble_5)
+
+# yelping_since (currently character)
+final_tibble_5 <- final_tibble_5 %>%
+  mutate(yelping_since = ymd_hms(yelping_since))
+
+glimpse(final_tibble_5)
+
+# From inspecting the data in the viewer, the variable elite has some blank values not encoded as missing values
+
+glimpse(final_tibble_5)
+
+# Creating a variable for the number of years each user has been an elite user: elite_years_count 
+
+unique_values_elite <- final_tibble_5 %>%
+  group_by(elite) %>%
+  count(elite) %>%
+  arrange(desc(n))
+  
+print(unique_values_elite)
+
+final_tibble_6 <- final_tibble_5 %>%
+  mutate(elite_count = ifelse(elite == "", 0, str_count(elite, ",") + 1))
+  
+  
+unique_values_elite_count <- final_tibble_6 %>%
+  group_by(elite_count) %>%
+  count(elite_count) %>%
+  arrange(desc(n))
+  
+print(unique_values_elite_count)
+
+# The original variable can therefore be dropped
+
+final_tibble_6 <- final_tibble_6 %>% 
+  select(-elite)
+  
+glimpse(final_tibble_6)
+
+
+# Creating a variable for the number of friends a user has on the platform: the friends_count variable 
+
+final_tibble_7 <- final_tibble_6 %>%
+  mutate(users_friend_count = ifelse(friends == "", 0, str_count(friends, ",") + 1))
+
+unique_values_friend_count <- final_tibble_7 %>%
+  group_by(users_friend_count) %>%
+  count(users_friend_count) %>%
+  arrange(desc(n))
+  
+print(n = 30, unique_values_friend_count)
+
+# The original variable can therefore be dropped
+
+final_tibble_7 <- final_tibble_7 %>% 
+  select(-friends)
+  
+glimpse(final_tibble_7)
+
+# Dropping the hours and attributes sub-dataframes, whilst retaining the useful columns
+
+final_tibble_7 <- final_tibble_7 %>% 
+  select(-hours)
+  
+glimpse(final_tibble_7)
+
+final_tibble_7 <- final_tibble_7 %>%
+  mutate(RestaurantsPriceRange2 = attributes$RestaurantsPriceRange2)
+
+final_tibble_7 <- final_tibble_7 %>%
+  mutate(RestaurantsPriceRange2 = factor(RestaurantsPriceRange2, levels = c("1", "2", "3", "4")))
+
+glimpse(final_tibble_7)
+
+final_tibble_7 <- final_tibble_7 %>% 
+  select(-attributes)
+
+glimpse(final_tibble_7)
+
+# Conducting Sentiment Analysis
+
+tidy_text <- final_tibble_7 %>%
+  unnest_tokens(word, text)
+
+bing_lexicon <- get_sentiments("bing")
+
+sentiment_scores <- tidy_text %>%
+  inner_join(bing_lexicon, by = c("word" = "word")) %>%
+  group_by(review_id, word) %>%
+  summarise(sentiment_score = sum(sentiment == "positive") - sum(sentiment == "negative"))
+
+review_sentiment <- sentiment_scores %>%
+  group_by(review_id) %>%
+  summarise(sentiment_score = sum(sentiment_score))
+
+final_tibble_8 <- final_tibble_7 %>%
+  left_join(review_sentiment, by = c("review_id" = "review_id"))
+
+summary(final_tibble_8$sentiment_score)
+glimpse(final_tibble_8)
+
+# Recoding RestaurantsPriceRange2 to make it compatible with linear modelling
+
+final_tibble_7 <- cbind(final_tibble_7, model.matrix(~ RestaurantsPriceRange2 - 1, data = final_tibble_7))
+
+# Investigating whether sentiment_score has any missing values
+
+missings_in_columns <- colSums(is.na(final_tibble_8))
+print(missings_in_columns)
+
+final_tibble_8 <- final_tibble_8 %>%
+  filter(!is.na(sentiment_score))
+
+missings_in_columns <- colSums(is.na(final_tibble_8))
+print(missings_in_columns)
+
+glimpse(final_tibble_8)
+
+# Dropping all remaining variables seen as irrelevant or unsuitable for linear modelling to get the final tibble for modelling
+
+final_tibble_LASSO <- final_tibble_8 %>% 
+  select(-RestaurantsPriceRange2, -postal_code, -state, -city, -address, -name.y, -name.x, -text, business_id, -user_id, -review_id, -business_id)
+
+glimpse(final_tibble_LASSO)
+
+str(final_tibble_LASSO)
+
+dim(final_tibble_LASSO)
+
+summary(final_tibble_LASSO$stars.x)
+
+missings_in_columns <- colSums(is.na(final_tibble_LASSO))
+print(missings_in_columns)
+
+
+```
+
+## Model Selection
+
+```{r, fig.width=12, fig.height=10}
+
+glimpse(final_tibble_LASSO)
+
+# Distribution of Stars given per review
+
+ggplot(final_tibble_LASSO, aes(x = as.factor(stars.x))) +
+  geom_bar() +
+  labs(title = "Distribution of Stars given per review", x = "stars.x", y = "Count")
+
+# Correlation matrix for variables in the final tibble
+
+numerical_vars <- sapply(final_tibble_LASSO, is.numeric)
+
+cor_matrix <- cor(final_tibble_LASSO[, numerical_vars])
+
+ggcorrplot(cor_matrix,
+           type = "full", 
+           lab = TRUE,  
+           lab_size = 2, 
+           method = "square",  
+           colors = c("blue", "white", "red"), 
+           title = "Correlation Matrix for the final tibble",
+           ggtheme = ggplot2::theme_minimal(),
+           hc.order = TRUE,    
+           show.legend = TRUE)          
+
+```
+
+As a consequence of the high number of feature variables within the data, the difficulty to distinguish between and make judgements on their potential impacts and the resultantly high risk of multi-collinearity (see matrix below, [5]), I opted to use the Least Absolute Shrinkage and Selection Operator (LASSO). In comparison to traditional OLS regression, the coefficients this model gives are biased towards 0, yet the variance of its predictions are greatly reduced. As a linear model though, it still maintains superior interpretability to other supervised learning methods that could be used to approach the problem. The LASSO regression enables us to interpret the direction of the effect of a variable, as opposed to solely its contribution to the predictive power of the model; an advantage of linear regression models. LASSO was preferred to Ridge regression for this application as it sets some of the coefficients to 0 (whereas Ridge purely shrinks them), potentially needed here to avoid multi-collinearity.  
+
+```{r, include=FALSE}
+
+# LASSO model
+
+# Test-train split
+
+set.seed(1234)
+
+train_index <- sample(1:nrow(final_tibble_LASSO), 0.9 * nrow(final_tibble_LASSO))
+
+final_train <- final_tibble_LASSO[train_index, ]
+final_x_train <- final_train %>% select(-stars.x)
+final_y_train <- final_train$stars.x
+
+final_test <- final_tibble_LASSO[-train_index, ]
+final_x_test <- final_test %>% select(-stars.x)
+final_y_test <- final_test$stars.x
+
+x_train_matrix <- makeX(final_x_train)
+y_train_matrix <- as.matrix(final_y_train)
+x_test_matrix <- makeX(final_x_test)
+y_test_matrix <- as.matrix(final_y_test)
+
+# LASSO with Cross-Validation
+cv.out <- cv.glmnet(x_train_matrix, y_train_matrix, alpha = 1, nfolds = 5)
+plot(cv.out)
+lambda_LASSO_cv <- cv.out$lambda.min 
+
+LASSO.mod <- glmnet(x_train_matrix, y_train_matrix, alpha = 1, lambda = lambda_LASSO_cv, thresh = 1e-12)
+
+print(coef(LASSO.mod))
+
+# Fit on the Test Data
+LASSO.pred <- predict(LASSO.mod, s = lambda_LASSO_cv, newx = x_test_matrix)
+LASSO_MSE <- mean((LASSO.pred - y_test_matrix) ^ 2) 
+
+cat("LASSO MSE on Test Data:", LASSO_MSE, "\n")
+
+# Fit on  the Training Data
+LASSO.pred_train <- predict(LASSO.mod, s = lambda_LASSO_cv, newx = x_train_matrix)
+LASSO_MSE_train <- mean((LASSO.pred_train - y_train_matrix) ^ 2) 
+
+cat("LASSO MSE on Training Data:", LASSO_MSE_train, "\n")
+
+```
+
+## Results and Evaluation
+
+```{r}
+# LASSO coefficients
+print(coef(LASSO.mod))
+
+# LASSO Test Mean Squared Error
+cat("LASSO MSE on Test Data:", LASSO_MSE, "\n")
+
+# LASSO Training Mean Squared Error
+cat("LASSO MSE on Training Data:", LASSO_MSE_train, "\n")
+
+
+# Visualisation for Training and Test MSE
+
+plot(log(cv.out$lambda), cv.out$cvm, type = 'b', col = 'blue', xlab = 'log(lambda)', ylab = 'Cross-validated MSE')
+points(log(lambda_LASSO_cv), LASSO_MSE, col = 'red', pch = 19)  
+points(log(lambda_LASSO_cv), LASSO_MSE_train, col = 'green', pch = 19)  
+legend("topright", legend = c("Test MSE", "Training MSE"), col = c("red", "green"), pch = 19)
+
+# Plotting Predicted vs Actual values for the Test and Training data
+
+y_axis_limits <- c(-5, 10)
+
+hex_train <- hexbin(y_train_matrix, LASSO.pred_train, xbins = 50)
+plot(hex_train, main = 'Predicted vs. Actual Stars (Training)', xlab = 'Actual', ylab = 'Predicted', colramp = function(n) colorRampPalette(c("white", "blue"))(n))
+
+
+hex_test <- hexbin(y_test_matrix, LASSO.pred, xbins = 50)
+plot(hex_test, main = 'Predicted vs. Actual Stars (Test)', xlab = 'Actual', ylab = 'Predicted', colramp = function(n) colorRampPalette(c("white", "blue"))(n))
+
+summary(final_tibble_LASSO$stars.x)
+
+```
+
+The final MSE I managed to reach on the test data is 1.01, with a very similar 1.02 MSE for the training data. This may be a sign that the model is underfitting, and therefore not capturing enough of the key variation within the data to inform its predictions. In attempting to further reduce the MSE though, I could be limiting the model’s external validity by introducing features with too little variation within my dataset to be applicable on a wider scale, for example the attribute “BusinessAcceptsCreditCards”.
+
+The largest positive coefficients in the model (indicating a positive relationship with “stars.x”) include those for the “sentiment_score” (the level of positivity conveyed within their review), “stars.y” (the average number of stars a business receives) and “average_stars” (the average number of stars a particular reviewer has given in the past). Significant negative relationships are also observed between “stars.x” and some of the features, including “useful.x” (the number of useful votes a review received) and “elite_count” (the number of years the reviewer has been an elite user). 
+
+As can be seen graphically below [6], the model also performs notably worse when attempting to predict reviews that are negative, showing a much wider variability in results. This may be partially due to the underlying distribution of the training and test data, both of which are dominated by positive reviews, and could therefore possibly be remedied with a larger training dataset. Though it may also be due to a general lack in complexity of the model, with not enough business attributes being included. 
+
+
+# My Greatest Challenge
+
+My greatest challenge in completing this project turned was the variable selection problem. The balance between the sacrifice of information via removing observations to keep more explanatory variables and maintaining a larger dataset that contains fewer features was difficult to find, particularly when attempting to do so in a data driven manor. Ultimately, many of my decisions leant towards the second approach, in an effort to achieve a higher level of external validity. My choice of model partially reflects this challenge. 
+
+Additionally, I found the R code for conducting the sentiment analysis and creating some of the visualisations particularly challenging to operationalize. Though, given the intuitive importance of including a derivative of the main body of the reviews in the model, and the fact that including the sentiment analysis improved the performance of my model by reducing the test MSE my model was able to achieve by around 0.15, I see it as worthwhile. I believe that more detailed sentiment analysis, perhaps looking at emotions, could lead to further improvements in the model’s predictive ability.  
+
+
+# References
+
+References
+
+[1]: (2023) Yelp dataset. Available at: https://www.yelp.com/dataset/documentation/main (Accessed: 05 December 2023). 
+
+[2]: Data visualization with GGPLOT2 (2023) Data Analysis and Visualisation in R for Ecologists: Data visualization with ggplot2. Available at: https://datacarpentry.org/R-ecology-lesson/04-visualization-ggplot2.html (Accessed: 05 December 2023). 
+
+[3]: Be awesome in ggplot2: A practical guide to be highly effective - R software and Data Visualization (2020) STHDA. Available at: http://www.sthda.com/english/wiki/be-awesome-in-ggplot2-a-practical-guide-to-be-highly-effective-r-software-and-data-visualization?fbclid=IwAR3613N9JtkqxAKAu5TTl8JG4SX_vM4woddD1EO9gXSRUZ8yqIxfFMf5EIw (Accessed: 05 December 2023). 
+
+[4]: Robinson, J.S. and D. (2021) 2 sentiment analysis with Tidy Data: Text mining with R, A Tidy Approach. Available at: https://www.tidytextmining.com/sentiment (Accessed: 05 December 2023). 
+
+[5]: Visualization of a correlation matrix using GGPLOT2 in R (2021) GeeksforGeeks. Available at: https://www.geeksforgeeks.org/visualization-of-a-correlation-matrix-using-ggplot2-in-r/ (Accessed: 05 December 2023). 
+
+[6]: Wilke, C.O. (2020) Introduction to cowplot. Available at: https://cran.r-project.org/web/packages/cowplot/vignettes/introduction.html (Accessed: 05 December 2023). 
+
+# Tabula Statement
+
+We're part of an academic community at Warwick.
+
+Whether studying, teaching, or researching, we’re all taking part in an expert conversation which must meet standards of academic integrity. When we all meet these standards, we can take pride in our own academic achievements, as individuals and as an academic community.
+
+Academic integrity means committing to honesty in academic work, giving credit where we've used others' ideas and being proud of our own achievements.
+
+In submitting my work I confirm that:
+
+1. I have read the guidance on academic integrity provided in the Student Handbook and understand the University regulations in relation to Academic Integrity. I am aware of the potential consequences of Academic Misconduct.
+
+2. I declare that the work is all my own, except where I have stated otherwise.
+
+3. No substantial part(s) of the work submitted here has also been submitted by me in other credit bearing assessments courses of study (other than in certain cases of a resubmission of a piece of work), and I acknowledge that if this has been done this may lead to an appropriate sanction.
+
+4. Where a generative Artificial Intelligence such as ChatGPT has been used I confirm I have abided by both the University guidance and specific requirements as set out in the Student Handbook and the Assessment brief. I have clearly acknowledged the use of any generative Artificial Intelligence in my submission, my reasoning for using it and which generative AI (or AIs) I have used. Except where indicated the work is otherwise entirely my own.
+
+5. I understand that should this piece of work raise concerns requiring investigation in relation to any of points above, it is possible that other work I have submitted for assessment will be checked, even if marks (provisional or confirmed) have been published.
+
+6. Where a proof-reader, paid or unpaid was used, I confirm that the proofreader was made aware of and has complied with the University’s proofreading policy.
+
+7. I consent that my work may be submitted to Turnitin or other analytical technology. I understand the use of this service (or similar), along with other methods of maintaining the integrity of the academic process, will help the University uphold academic standards and assessment fairness.
+
+Privacy statement
+
+The data on this form relates to your submission of coursework. The date and time of your submission, your identity, and the work you have submitted will be stored. We will only use this data to administer and record your coursework submission.
+
+Related articles
+
+Reg. 11 Academic Integrity (from 4 Oct 2021)
+
+Guidance on Regulation 11
+
+Proofreading Policy  
+
+Education Policy and Quality Team
+
+Academic Integrity (warwick.ac.uk)
+
+
+
+
